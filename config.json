@@ -1,0 +1,19 @@
+{
+  "roles": {
+    "unverified": "No verificado",
+    "survivor": "Superviviente",
+    "leader": "Lider de Tribu",
+    "protected": ["ADMIN"]
+  },
+  "channels": {
+    "log": "┣「📖」ʀᴇɢɪsᴛʀᴏ-ᴅᴇ-ᴛʀɪʙᴜ",
+    "welcome": "┏「👋」ʙɪᴇɴᴠᴇɴɪᴅᴀ",
+    "goodbye": "┣「🚪」ʙʏᴇ",
+    "ban_notifications": "┗「🚫」ʙᴀɴᴇᴀᴅᴏs",
+    "leader_channel": "👑・Sᴀʟᴀ-ᴅᴇ-Lɪᴅᴇʀᴇs"
+  },
+  "categories": {
+    "registration": "Rᴇɢɪsᴛʀᴏ",
+    "tribes": "Tʀɪʙᴜs"
+  }
+}

@@ -1,0 +1,23 @@
+{
+  "name": "bot-registro-tribus",
+  "version": "1.0.0",
+  "description": "Bot para registrar miembros en tribus, asignar roles y mantener un registro",
+  "main": "index.js",
+  "scripts": {
+    "start": "node index.js",
+    "deploy-commands": "node deploy-commands.js"
+  },
+  "engines": {
+    "node": ">=16.9.0"
+  },
+  "dependencies": {
+    "@discordjs/rest": "^1.7.1",
+    "axios": "^1.13.2",
+    "better-sqlite3": "^12.4.1",
+    "discord-api-types": "^0.38.34",
+    "discord.js": "^14.24.2",
+    "dotenv": "^16.6.1",
+    "fs-extra": "^11.1.1",
+    "rcon-client": "^4.2.5"
+  }
+}
