@@ -52,7 +52,7 @@ const createData = () => {
         .addSubcommand(s => s.setName('checkin').setDescription('🕒 Renueva actividad para evitar borrado.'))
         .addSubcommand(s => s.setName('votar').setDescription('Inicia votación de líder.'))
         .addSubcommand(s => s.setName('reclutar').setDescription('Invita a un jugador a tu tribu.').addUserOption(o => o.setName('usuario').setDescription('Usuario a invitar').setRequired(true)))
-        .addSubcommand(s => s.setName('ascender').setDescription('Traspasa liderazgo.').addUserOption(o => o.setName('usuario').setDescription('Usuario').setRequired(true)))
+        .addSubcommand(s => s.setName('ascender').setDescription('Traspasa el liderazgo.').addUserOption(o => o.setName('usuario').setDescription('Usuario').setRequired(true)))
         .addSubcommand(s => s.setName('kick').setDescription('Expulsa miembro.').addUserOption(o => o.setName('usuario').setDescription('Usuario').setRequired(true)))
         .addSubcommand(s => s.setName('rename').setDescription('Cambia nombre tribu.').addStringOption(o => o.setName('nuevo_nombre').setDescription('Nuevo nombre').setRequired(true)))
         .addSubcommand(s => s.setName('updatehelp').setDescription('ADMIN: Actualiza paneles en canales.'));
