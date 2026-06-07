@@ -84,7 +84,7 @@ module.exports = {
             const season = config.season || 0;
             const welcomeEmbed = new EmbedBuilder()
                 .setColor('#00BFFF')
-                .setTitle(`👋 Bienvenido a **${guild.name}**!`)
+                .setTitle(`👋 ¡Bienvenido a **${guild.name}**!`)
                 .setDescription(`Hola **${member}**, soy **${member.client.user.username}**.\nEstás a un paso de entrar a la **Season ${season}**.`)
                 .setThumbnail(member.user.displayAvatarURL({ dynamic: true }))
                 .addFields(
