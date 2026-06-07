@@ -6,7 +6,7 @@ const { updateStatusPanels } = require('../utils/statusUpdater');
 // 👇 NUEVA IMPORTACIÓN PARA EL LOG DE RCON
 const { checkServerLogs } = require('../utils/serverLogWatcher');
 
-const MAINTENANCE_INTERVAL = 5 * 60 * 1000; // 5 Minutos
+const MAINTENANCE_INTERVAL = 10 * 60 * 1000; // 5 Minutos
 const MAX_REGISTRATION_AGE = 60 * 60 * 1000; // 1 Hora
 
 let isSyncing = false;

@@ -2,87 +2,102 @@ const Database = require('better-sqlite3');
 const path = require('path');
 const fs = require('fs');
 const { encrypt, decrypt } = require('./crypto');
-
 const dbPath = path.join(__dirname, '..', 'data', 'database.sqlite');
 const dataDir = path.join(__dirname, '..', 'data');
 if (!fs.existsSync(dataDir)) fs.mkdirSync(dataDir, { recursive: true });
-
 const db = new Database(dbPath);
-
 // Inicialización de Tablas
 db.exec(`
     CREATE TABLE IF NOT EXISTS guild_configs ( guild_id TEXT PRIMARY KEY, config_json TEXT );
     CREATE TABLE IF NOT EXISTS active_tribes ( guild_id TEXT, tribe_name TEXT, data_json TEXT, PRIMARY KEY (guild_id, tribe_name) );
     CREATE TABLE IF NOT EXISTS season_history ( guild_id TEXT, season INTEGER, data_json TEXT, timestamp INTEGER, PRIMARY KEY (guild_id, season) );
     CREATE TABLE IF NOT EXISTS pending_registrations ( channel_id TEXT PRIMARY KEY, user_id TEXT, step INTEGER, data_id TEXT, data_tribe TEXT, timestamp INTEGER );
-    
+
     -- TABLAS DE SEGURIDAD Y LOGS
     CREATE TABLE IF NOT EXISTS permanent_bans ( guild_id TEXT, discord_id TEXT, reason TEXT, admin_id TEXT, timestamp INTEGER, PRIMARY KEY (guild_id, discord_id) );
     CREATE TABLE IF NOT EXISTS game_bans ( guild_id TEXT, discord_id TEXT, ark_id TEXT, ban_type TEXT, unban_time INTEGER, reason TEXT, admin_id TEXT, timestamp INTEGER );
     CREATE TABLE IF NOT EXISTS status_panels ( guild_id TEXT PRIMARY KEY, channel_id TEXT, message_id TEXT );
-
     -- TABLAS EXTERNAS (Ark/Nitrado)
     CREATE TABLE IF NOT EXISTS ark_cluster_configs ( id INTEGER PRIMARY KEY AUTOINCREMENT, guild_id TEXT, server_name TEXT, ip TEXT, port INTEGER, password_enc TEXT );
     CREATE TABLE IF NOT EXISTS nitrado_servers ( guild_id TEXT, server_name TEXT, service_id TEXT, PRIMARY KEY (guild_id, service_id) );
     CREATE TABLE IF NOT EXISTS nitrado_configs ( guild_id TEXT PRIMARY KEY, token TEXT, service_id TEXT, username TEXT );
     CREATE TABLE IF NOT EXISTS premium_guilds ( guild_id TEXT PRIMARY KEY, client_name TEXT, added_at INTEGER, is_unlimited INTEGER DEFAULT 0, last_alert INTEGER DEFAULT 0 );
-
-    -- [NUEVO] VOTOS (Para ahorrar RAM)
+    -- VOTOS (Para ahorrar RAM)
     CREATE TABLE IF NOT EXISTS suggestion_votes (
-        message_id TEXT PRIMARY KEY,
-        guild_id TEXT,
-        channel_id TEXT,
-        yes_count INTEGER DEFAULT 0,
-        no_count INTEGER DEFAULT 0,
-        voters_json TEXT
+                                                    message_id TEXT PRIMARY KEY,
+                                                    guild_id TEXT,
+                                                    channel_id TEXT,
+                                                    yes_count INTEGER DEFAULT 0,
+                                                    no_count INTEGER DEFAULT 0,
+                                                    voters_json TEXT
     );
+    -- AVISOS A NO VERIFICADOS (persistido para recordatorio cada 24h)
+    CREATE TABLE IF NOT EXISTS unverified_notices (
+                                                      discord_id TEXT,
+                                                      guild_id TEXT,
+                                                      last_notice INTEGER NOT NULL,
+                                                      PRIMARY KEY (discord_id, guild_id)
+        );
 `);
-
 // --- CONFIGURACIÓN ---
 function loadGuildConfig(guildId) { const row = db.prepare('SELECT config_json FROM guild_configs WHERE guild_id = ?').get(guildId); return row ? JSON.parse(row.config_json) : null; }
 function saveGuildConfig(guildId, configData) { db.prepare('INSERT OR REPLACE INTO guild_configs (guild_id, config_json) VALUES (?, ?)').run(guildId, JSON.stringify(configData)); }
-
 // --- TRIBUS (Corrección Race Condition) ---
-function loadTribes(guildId) { 
-    const rows = db.prepare('SELECT tribe_name, data_json FROM active_tribes WHERE guild_id = ?').all(guildId); 
-    const tribes = {}; 
-    for (const row of rows) tribes[row.tribe_name] = JSON.parse(row.data_json); 
-    return tribes; 
+function loadTribes(guildId) {
+    const rows = db.prepare('SELECT tribe_name, data_json FROM active_tribes WHERE guild_id = ?').all(guildId);
+    const tribes = {};
+    for (const row of rows) tribes[row.tribe_name] = JSON.parse(row.data_json);
+    return tribes;
 }
-
 function saveTribe(guildId, tribeName, tribeData) {
     const insert = db.prepare('INSERT OR REPLACE INTO active_tribes (guild_id, tribe_name, data_json) VALUES (?, ?, ?)');
     insert.run(guildId, tribeName, JSON.stringify(tribeData));
 }
-
 function deleteTribe(guildId, tribeName) {
     db.prepare('DELETE FROM active_tribes WHERE guild_id = ? AND tribe_name = ?').run(guildId, tribeName);
 }
-
 // Mantenemos saveTribes para migraciones, pero intenta usar saveTribe individualmente
-function saveTribes(guildId, tribesData) { 
-    const insert = db.prepare('INSERT OR REPLACE INTO active_tribes (guild_id, tribe_name, data_json) VALUES (?, ?, ?)'); 
-    const deleteOld = db.prepare('DELETE FROM active_tribes WHERE guild_id = ?'); 
-    const transaction = db.transaction((tribes) => { 
-        deleteOld.run(guildId); 
-        for (const [name, data] of Object.entries(tribes)) { insert.run(guildId, name, JSON.stringify(data)); } 
-    }); 
-    transaction(tribesData); 
+function saveTribes(guildId, tribesData) {
+    const insert = db.prepare('INSERT OR REPLACE INTO active_tribes (guild_id, tribe_name, data_json) VALUES (?, ?, ?)');
+    const deleteOld = db.prepare('DELETE FROM active_tribes WHERE guild_id = ?');
+    const transaction = db.transaction((tribes) => {
+        deleteOld.run(guildId);
+        for (const [name, data] of Object.entries(tribes)) { insert.run(guildId, name, JSON.stringify(data)); }
+    });
+    transaction(tribesData);
 }
-
 // --- VOTOS ---
 function getVote(messageId) {
     const row = db.prepare('SELECT * FROM suggestion_votes WHERE message_id = ?').get(messageId);
     if (!row) return null;
     return { ...row, voters: new Set(JSON.parse(row.voters_json || '[]')) };
 }
-
 function saveVote(messageId, guildId, channelId, yes, no, votersSet) {
     const votersArray = Array.from(votersSet);
     db.prepare(`INSERT OR REPLACE INTO suggestion_votes (message_id, guild_id, channel_id, yes_count, no_count, voters_json) VALUES (?, ?, ?, ?, ?, ?)`)
-      .run(messageId, guildId, channelId, yes, no, JSON.stringify(votersArray));
+        .run(messageId, guildId, channelId, yes, no, JSON.stringify(votersArray));
 }
-
+// --- AVISOS A NO VERIFICADOS ---
+/**
+ * Comprueba si hay que avisar al usuario no verificado.
+ * Devuelve true si nunca se le ha avisado o han pasado más de 24 horas.
+ * Si devuelve true, actualiza el timestamp automáticamente.
+ */
+function shouldNotifyUnverified(discordId, guildId) {
+    const TWENTY_FOUR_HOURS = 24 * 60 * 60 * 1000;
+    const row = db.prepare('SELECT last_notice FROM unverified_notices WHERE discord_id = ? AND guild_id = ?').get(discordId, guildId);
+    if (row && (Date.now() - row.last_notice) < TWENTY_FOUR_HOURS) return false;
+    // Han pasado 24h o no existe: actualizar y devolver true
+    db.prepare('INSERT OR REPLACE INTO unverified_notices (discord_id, guild_id, last_notice) VALUES (?, ?, ?)').run(discordId, guildId, Date.now());
+    return true;
+}
+/**
+ * Elimina el registro de avisos de un usuario (llamar cuando se verifica,
+ * para no dejar basura en la DB).
+ */
+function clearUnverifiedNotice(discordId, guildId) {
+    db.prepare('DELETE FROM unverified_notices WHERE discord_id = ? AND guild_id = ?').run(discordId, guildId);
+}
 // --- RESTO DE FUNCIONES (REGISTRO, ARK, ETC.) ---
 function initRegistrationState(channelId, userId) { db.prepare('INSERT OR REPLACE INTO pending_registrations (channel_id, user_id, step, data_id, data_tribe, timestamp) VALUES (?, ?, 1, NULL, NULL, ?)').run(channelId, userId, Date.now()); }
 function getRegistrationState(channelId) { return db.prepare('SELECT * FROM pending_registrations WHERE channel_id = ?').get(channelId); }
@@ -93,10 +108,10 @@ function findOpenRegistration(userId) { return db.prepare('SELECT * FROM pending
 function archiveSeason(guildId, seasonNumber, tribesData) { db.prepare('INSERT OR REPLACE INTO season_history (guild_id, season, data_json, timestamp) VALUES (?, ?, ?, ?)').run(guildId, seasonNumber, JSON.stringify(tribesData), Date.now()); }
 function loadSeasonHistory(guildId, seasonNumber) { const row = db.prepare('SELECT data_json FROM season_history WHERE guild_id = ? AND season = ?').get(guildId, seasonNumber); return row ? JSON.parse(row.data_json) : null; }
 function getAvailableSeasons(guildId) { return db.prepare('SELECT DISTINCT season FROM season_history WHERE guild_id = ? ORDER BY season DESC').all(guildId).map(row => String(row.season)); }
-function resetServerData(guildId) { 
-    const row = db.prepare('SELECT config_json FROM guild_configs WHERE guild_id = ?').get(guildId); 
-    if (row) { let config = JSON.parse(row.config_json); config.season = 0; db.prepare('UPDATE guild_configs SET config_json = ? WHERE guild_id = ?').run(JSON.stringify(config), guildId); } 
-    const wipeTransaction = db.transaction(() => { db.prepare('DELETE FROM active_tribes WHERE guild_id = ?').run(guildId); db.prepare('DELETE FROM season_history WHERE guild_id = ?').run(guildId); db.prepare('DELETE FROM pending_registrations').run(); }); wipeTransaction(); return loadGuildConfig(guildId); 
+function resetServerData(guildId) {
+    const row = db.prepare('SELECT config_json FROM guild_configs WHERE guild_id = ?').get(guildId);
+    if (row) { let config = JSON.parse(row.config_json); config.season = 0; db.prepare('UPDATE guild_configs SET config_json = ? WHERE guild_id = ?').run(JSON.stringify(config), guildId); }
+    const wipeTransaction = db.transaction(() => { db.prepare('DELETE FROM active_tribes WHERE guild_id = ?').run(guildId); db.prepare('DELETE FROM season_history WHERE guild_id = ?').run(guildId); db.prepare('DELETE FROM pending_registrations').run(); }); wipeTransaction(); return loadGuildConfig(guildId);
 }
 function addPremium(guildId, clientName) { try { db.prepare('INSERT OR REPLACE INTO premium_guilds (guild_id, client_name, added_at, is_unlimited, last_alert) VALUES (?, ?, ?, 0, 0)').run(guildId, clientName, Date.now()); return true; } catch (e) { return false; } }
 function removePremium(guildId) { try { db.prepare('DELETE FROM premium_guilds WHERE guild_id = ?').run(guildId); return true; } catch (e) { return false; } }
@@ -124,7 +139,6 @@ function deleteNitradoConfig(guildId) { db.prepare('DELETE FROM nitrado_configs 
 function addNitradoServer(guildId, name, serviceId) { db.prepare('INSERT OR REPLACE INTO nitrado_servers (guild_id, server_name, service_id) VALUES (?, ?, ?)').run(guildId, name, String(serviceId)); }
 function getNitradoServers(guildId) { return db.prepare('SELECT * FROM nitrado_servers WHERE guild_id = ?').all(guildId); }
 function removeNitradoServer(guildId, name) { db.prepare('DELETE FROM nitrado_servers WHERE guild_id = ? AND server_name = ?').run(guildId, name); }
-
 module.exports = {
     loadGuildConfig, saveGuildConfig,
     loadTribes, saveTribes, saveTribe, deleteTribe,
@@ -136,5 +150,6 @@ module.exports = {
     initRegistrationState, getRegistrationState, updateRegistrationState, deleteRegistrationState,
     saveStatusPanel, getStatusPanel, deleteStatusPanel,
     saveNitradoConfig, getNitradoConfig, deleteNitradoConfig, addNitradoServer, getNitradoServers, removeNitradoServer,
-    getVote, findOpenRegistration, saveVote
+    getVote, findOpenRegistration, saveVote,
+    shouldNotifyUnverified, clearUnverifiedNotice
 };

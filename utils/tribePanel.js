@@ -59,7 +59,7 @@ async function updateTribePanel(guild, tribeName) {
             await newMsg.pin().catch(()=>{}); // Fijar mensaje
             
             tData.instructionMessageId = newMsg.id;
-            saveTribe(guild.id, tribes);
+            saveTribe(guild.id, tribeName, tData);
         }
     } catch (error) {
         console.error(`Error actualizando panel de tribu ${tribeName}:`, error);
