@@ -1,5 +1,5 @@
 const { EmbedBuilder } = require('discord.js');
-const { loadTribes, saveTribes } = require('./dataManager');
+const { loadTribes, saveTribe } = require('./dataManager');
 
 /**
  * Actualiza o crea el panel de información dentro del canal privado de la tribu.
@@ -59,7 +59,7 @@ async function updateTribePanel(guild, tribeName) {
             await newMsg.pin().catch(()=>{}); // Fijar mensaje
             
             tData.instructionMessageId = newMsg.id;
-            saveTribes(guild.id, tribes);
+            saveTribe(guild.id, tribes);
         }
     } catch (error) {
         console.error(`Error actualizando panel de tribu ${tribeName}:`, error);
