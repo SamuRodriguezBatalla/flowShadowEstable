@@ -16,59 +16,38 @@ module.exports = {
     once: true,
     async execute(client) {
         console.log(`✅ Bot Online: ${client.user.tag} - Sistema Híbrido V17.`);
-        
-        // Ejecución inicial al encender
-        runMaintenance(client);
-        
-        // Bucle infinito (cada 5 minutos)
-        setInterval(() => runMaintenance(client), MAINTENANCE_INTERVAL);
+
+        // 1. TAREAS RÁPIDAS Y CRÍTICAS (Se ejecutan frecuentemente)
+        // Paneles de estado (cada 3 mins) y Lectura de Logs RCON (cada 4 mins)
+        setInterval(() => updateStatusPanels(client), 3 * 60 * 1000);
+        setInterval(() => checkServerLogs(client), 4 * 60 * 1000);
+
+        // 2. TAREAS MEDIAS (Cada 15 minutos)
+        // Revisar inactividad de tribus, registros abandonados y baneos de Ark
+        setInterval(() => {
+            for (const guild of client.guilds.cache.values()) {
+                const config = loadGuildConfig(guild.id);
+                if (config) {
+                    checkTribes(guild, config, client).catch(()=>{});
+                    checkRegistrationTimeouts(guild, config).catch(()=>{});
+                    checkGameBans(guild).catch(()=>{});
+                }
+            }
+        }, 15 * 60 * 1000);
+
+        // 3. TAREAS MUY PESADAS (Cada 2 horas)
+        // Sincronizar roles (usa mucha RAM) y comprobar pagos
+        setInterval(() => {
+            for (const guild of client.guilds.cache.values()) {
+                const config = loadGuildConfig(guild.id);
+                if (config) autoAssignRoles(guild, config).catch(()=>{});
+            }
+            checkPayments(client).catch(()=>{});
+        }, 2 * 60 * 60 * 1000);
+
+        console.log("⏱️ Tareas de mantenimiento distribuidas correctamente.");
     },
 };
-
-async function runMaintenance(client) {
-    if (isSyncing) return;
-    isSyncing = true;
-
-    // Iterar sobre todos los servidores donde está el bot
-    for (const guild of client.guilds.cache.values()) {
-        try {
-            const config = loadGuildConfig(guild.id);
-            if (!config) continue;
-
-            // A) AUTO-ROL (Asignar rol a quienes no lo tengan)
-            await autoAssignRoles(guild, config);
-
-            // B) MANTENIMIENTO TRIBUS (Avisos y borrado por inactividad)
-            await checkTribes(guild, config, client);
-
-            // C) LIMPIEZA DE REGISTROS (Canales abandonados)
-            await checkRegistrationTimeouts(guild, config);
-
-            // D) BANEOS TEMPORALES ARK (Desbaneo automático)
-            await checkGameBans(guild);
-
-            // F) LOG DE MANTENIMIENTO (Consola)
-            console.log(`📡 [${guild.name}] Mantenimiento completado.`);
-
-        } catch (e) {
-            console.error(`Error mantenimiento en ${guild.name}:`, e.message);
-        }
-    }
-    
-    // G) ACTUALIZAR PANELES DE ESTADO (Global)
-    await updateStatusPanels(client);
-    
-    // H) SISTEMA DE PAGOS (Licencias)
-    await checkPayments(client);
-
-    // ==================================================================
-    // 🔥 I) NUEVO: REVISIÓN DE LOGS DEL SERVIDOR (RCON)
-    // ==================================================================
-    // Busca comandos admin ejecutados dentro del juego y los envía a Discord
-    await checkServerLogs(client);
-    
-    isSyncing = false;
-}
 
 // --- 1. AUTO-ASSIGN ROLES ---
 async function autoAssignRoles(guild, config) {

@@ -1,20 +1,26 @@
 require("dotenv").config();
 const fs = require("fs");
 const path = require("path");
-const { Client, GatewayIntentBits, Partials, Collection } = require("discord.js");
+const { Client, GatewayIntentBits, Partials, Collection, Options } = require("discord.js");
 const { startCleanupTask } = require('./utils/cleanupManager');
 
 // Configuración del Cliente
 const client = new Client({
     intents: [
         GatewayIntentBits.Guilds,
-        GatewayIntentBits.GuildMembers, 
+        GatewayIntentBits.GuildMembers,
         GatewayIntentBits.GuildMessages,
         GatewayIntentBits.MessageContent,
-        GatewayIntentBits.GuildModeration, 
+        GatewayIntentBits.GuildModeration,
         GatewayIntentBits.GuildPresences,
     ],
     partials: [Partials.Channel],
+    // 👇 AÑADE ESTO PARA SALVAR TU RAM 👇
+    makeCache: Options.cacheWithLimits({
+        MessageManager: 50, // Solo recuerda 50 mensajes por canal
+        PresenceManager: 0,
+        ThreadManager: 0,
+    }),
 });
 
 // 1. Cargador de Comandos

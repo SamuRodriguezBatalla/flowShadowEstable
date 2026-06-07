@@ -6,6 +6,8 @@ const dbPath = path.join(__dirname, '..', 'data', 'database.sqlite');
 const dataDir = path.join(__dirname, '..', 'data');
 if (!fs.existsSync(dataDir)) fs.mkdirSync(dataDir, { recursive: true });
 const db = new Database(dbPath);
+db.pragma('journal_mode = WAL');
+db.pragma('synchronous = NORMAL');
 // Inicialización de Tablas
 db.exec(`
     CREATE TABLE IF NOT EXISTS guild_configs ( guild_id TEXT PRIMARY KEY, config_json TEXT );
