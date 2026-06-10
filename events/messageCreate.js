@@ -1,4 +1,4 @@
-const { Events, ChannelType, PermissionFlagsBits } = require('discord.js');
+const { Events, ChannelType, PermissionFlagsBits, EmbedBuilder } = require('discord.js');
 const { loadGuildConfig, getRegistrationState, initRegistrationState, loadTribes, saveTribe, findOpenRegistration, shouldNotifyUnverified } = require('../utils/dataManager');
 
 // Solo para la protección de canales ajenos (10s en RAM está bien aquí)
@@ -118,6 +118,23 @@ module.exports = {
 
                             initRegistrationState(newChannel.id, message.author.id);
 
+                            // 🔥 SOLUCIÓN AL BUG: Enviamos el Embed oficial dentro del canal recién creado
+                            const season = config.season || 0;
+                            const welcomeEmbed = new EmbedBuilder()
+                                .setColor('#00BFFF')
+                                .setTitle(`👋 ¡Bienvenido a **${message.guild.name}**!`)
+                                .setDescription(`Hola ${message.author}, soy **${message.client.user.username}**.\nEstás a un paso de entrar a la **Season ${season}**.`)
+                                .setThumbnail(message.author.displayAvatarURL({ dynamic: true }))
+                                .addFields(
+                                    { name: '📋 Instrucciones', value: 'Por favor, responde a las siguientes preguntas para completar tu ficha.' },
+                                    { name: '🚀 Paso 1/2', value: '**Escribe tu ID de Plataforma** a continuación (PSN, SteamID, Gamertag...).' }
+                                )
+                                .setFooter({ text: 'Registro Automático • Tus datos son privados.' })
+                                .setTimestamp();
+
+                            await newChannel.send({ content: `${message.author}`, embeds: [welcomeEmbed] }).catch(() => {});
+
+                            // Recordatorio temporal en el canal público sin borrar el mensaje del usuario
                             if (debeAvisar) {
                                 const hint = await message.channel.send({
                                     content: `${message.author} 👋 ¡Hola! Puedes hablar libremente, pero si quieres unirte a una tribu, completa tu registro aquí: ${newChannel}`
